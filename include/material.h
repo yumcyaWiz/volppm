@@ -9,8 +9,6 @@ enum class BxDFType { DIFFUSE, SPECULAR };
 
 enum class TransportDirection { FROM_LIGHT, FROM_CAMERA };
 
-using DirectionPair = std::pair<Vec3f, Vec3f>;
-
 // represent BRDF or BTDF
 // direction vectors are in tangent space(x: tangent, y: normal, z: bitangent)
 class BxDF {
@@ -62,12 +60,6 @@ class BxDF {
                                 const TransportDirection& transport_dir,
                                 Sampler& sampler, Vec3f& wi,
                                 float& pdf) const = 0;
-
-  // get all samplable direction
-  // NOTE: for specular only
-  // NOTE: used for drawing fresnel reflection nicely at low number of samples
-  virtual std::vector<DirectionPair> sampleAllDirection(
-      const Vec3f& wo, const TransportDirection& transport_dir) const = 0;
 };
 
 class Lambert : public BxDF {
@@ -96,12 +88,6 @@ class Lambert : public BxDF {
 
     return evaluate(wo, wi, transport_dir);
   }
-
-  std::vector<DirectionPair> sampleAllDirection(
-      const Vec3f& wo, const TransportDirection& transport_dir) const override {
-    std::vector<DirectionPair> ret;
-    return ret;
-  }
 };
 
 class Mirror : public BxDF {
@@ -125,14 +111,6 @@ class Mirror : public BxDF {
     pdf = 1.0f;
 
     return rho / absCosTheta(wi);
-  }
-
-  std::vector<DirectionPair> sampleAllDirection(
-      const Vec3f& wo, const TransportDirection& transport_dir) const override {
-    std::vector<DirectionPair> ret;
-    const Vec3f wi = reflect(wo, Vec3f(0, 1, 0));
-    ret.emplace_back(wi, rho / absCosTheta(wi));
-    return ret;
   }
 };
 
@@ -201,46 +179,6 @@ class Glass : public BxDF {
         return rho / absCosTheta(wi);
       }
     }
-  }
-
-  std::vector<DirectionPair> sampleAllDirection(
-      const Vec3f& wo, const TransportDirection& transport_dir) const override {
-    std::vector<DirectionPair> ret;
-
-    // set appropriate ior, normal
-    float iorO, iorI;
-    Vec3f n;
-    if (wo[1] > 0) {
-      iorO = 1.0f;
-      iorI = ior;
-      n = Vec3f(0, 1, 0);
-    } else {
-      iorO = ior;
-      iorI = 1.0f;
-      n = Vec3f(0, -1, 0);
-    }
-
-    // fresnel reflectance
-    const float fr = fresnel(dot(wo, n), iorO, iorI);
-
-    // reflection
-    const Vec3f wr = reflect(wo, n);
-    ret.emplace_back(wr, fr * rho / absCosTheta(wr));
-
-    // refraction
-    Vec3f tr;
-    if (refract(wo, n, iorO, iorI, tr)) {
-      float scalling = 1.0f;
-      if (transport_dir == TransportDirection::FROM_CAMERA) {
-        scalling = (iorO * iorO) / (iorI * iorI);
-      }
-
-      ret.emplace_back(tr, (1.0f - fr) * scalling * rho / absCosTheta(tr));
-    } else {
-      ret[0].second = rho / absCosTheta(wr);
-    }
-
-    return ret;
   }
 };
 
