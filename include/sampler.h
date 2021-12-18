@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <vector>
 
 #include "core.h"
 
@@ -97,5 +98,53 @@ Vec2f sampleDisk(const Vec2f& uv, float R, float& pdf) {
   pdf = 1.0f / (R * R) * PI_INV;
   return Vec2f(r * std::cos(theta), r * std::sin(theta));
 }
+
+// sample value from 1D discrete empirical distribution
+class DiscreteEmpiricalDistribution1D {
+ private:
+  std::vector<float> cdf;
+  std::vector<float> pdf;
+
+ public:
+  DiscreteEmpiricalDistribution1D(const float* values, unsigned int N) {
+    // sum f
+    float sum = 0;
+    for (std::size_t i = 0; i < N; ++i) {
+      sum += values[i];
+    }
+
+    // compute cdf
+    cdf.resize(N + 1);
+    cdf[0] = 0;
+    for (std::size_t i = 1; i < N + 1; ++i) {
+      cdf[i] = cdf[i - 1] + values[i - 1] / sum;
+    }
+
+    // compute pdf
+    pdf.resize(N);
+    for (std::size_t i = 0; i < N; ++i) {
+      pdf[i] = cdf[i + 1] - cdf[i];
+    }
+  }
+
+  DiscreteEmpiricalDistribution1D(const std::vector<float>& values)
+      : DiscreteEmpiricalDistribution1D(values.data(), values.size()) {}
+
+  uint32_t sample(float u, float& pdf) const {
+    // inverse cdf
+    int x = std::lower_bound(cdf.begin(), cdf.end(), u) - cdf.begin();
+    if (x == 0) {
+      x++;
+    }
+
+    // compute pdf
+    pdf = cdf[x] - cdf[x - 1];
+
+    // NOTE: cdf's index is +1 from values
+    return x - 1;
+  }
+
+  float getPDF(uint32_t i) const { return pdf[i]; }
+};
 
 #endif
