@@ -489,48 +489,85 @@ class PPM : public Integrator {
           ray.throughput /= Vec3f(russian_roulette_prob);
         }
 
-        // when directly hitting light
-        if (info.hitPrimitive->hasAreaLight()) {
-          return ray.throughput *
-                 info.hitPrimitive->Le(info.surfaceInfo, -ray.direction);
-        }
+        // sample medium
+        bool is_scattered = false;
+        if (ray.hasMedium()) {
+          const Medium* medium = ray.getCurrentMedium();
 
-        const BxDFType bxdf_type = info.hitPrimitive->getBxDFType();
-
-        // if hitting diffuse surface, compute reflected radiance with photon
-        // map
-        if (bxdf_type == BxDFType::DIFFUSE) {
-          return ray.throughput *
-                 computeRadianceWithPhotonMap(-ray.direction, info.surfaceInfo,
-                                              info.hitPrimitive);
-        }
-        // if hitting specular surface, generate next ray and continue tracing
-        else if (bxdf_type == BxDFType::SPECULAR) {
-          // sample direction by BxDF
+          Vec3f pos;
           Vec3f dir;
-          float pdf_dir;
-          Vec3f f = info.hitPrimitive->sampleBxDF(
-              -ray.direction, info.surfaceInfo, TransportDirection::FROM_CAMERA,
-              sampler, dir, pdf_dir);
+          Vec3f throughput_medium;
+          is_scattered = medium->sampleMedium(ray, info.t, sampler, pos, dir,
+                                              throughput_medium);
+
+          // if in-scattering occured, compute in-scattering radiance with
+          // volume photon map
+          if (is_scattered) {
+            return ray.throughput * computeRadianceWithVolumePhotonMap(
+                                        -ray.direction, pos, medium);
+          }
+
+          // advance ray
+          ray.origin = pos;
+          ray.direction = dir;
 
           // update throughput
-          ray.throughput *= f *
-                            cosTerm(-ray.direction, dir, info.surfaceInfo,
-                                    TransportDirection::FROM_CAMERA) /
-                            pdf_dir;
+          ray.throughput *= throughput_medium;
+        }
+
+        bool is_reflected_or_refracted = false;
+        if (!is_scattered) {
+          Vec3f dir = ray.direction;
+          if (info.hitPrimitive->hasSurface()) {
+            // when directly hitting light
+            if (info.hitPrimitive->hasAreaLight()) {
+              return ray.throughput *
+                     info.hitPrimitive->Le(info.surfaceInfo, -ray.direction);
+            }
+
+            const BxDFType bxdf_type = info.hitPrimitive->getBxDFType();
+
+            // if hitting diffuse surface, compute reflected radiance with
+            // photon map
+            if (bxdf_type == BxDFType::DIFFUSE) {
+              return ray.throughput *
+                     computeRadianceWithPhotonMap(
+                         -ray.direction, info.surfaceInfo, info.hitPrimitive);
+            }
+            // if hitting specular surface, generate next ray and continue
+            // tracing
+            else if (bxdf_type == BxDFType::SPECULAR) {
+              // sample direction by BxDF
+              float pdf_dir;
+              Vec3f f = info.hitPrimitive->sampleBxDF(
+                  -ray.direction, info.surfaceInfo,
+                  TransportDirection::FROM_CAMERA, sampler, dir, pdf_dir);
+
+              // update throughput
+              ray.throughput *= f *
+                                cosTerm(-ray.direction, dir, info.surfaceInfo,
+                                        TransportDirection::FROM_CAMERA) /
+                                pdf_dir;
+
+              is_reflected_or_refracted = true;
+            }
+          }
+
+          // update ray's medium
+          updateMedium(ray, dir, info);
 
           // update ray
           ray.origin = info.surfaceInfo.position;
           ray.direction = dir;
         }
+
+        // update depth
+        if (is_scattered || is_reflected_or_refracted) {
+          depth++;
+        }
       } else {
         // ray goes out the the sky
         break;
-      }
-
-      // update depth
-      if (true) {
-        depth++;
       }
     }
 
