@@ -16,6 +16,8 @@ constexpr float PI_INV = 1.0f / PI;
 constexpr float PI_MUL_2_INV = 1.0f / PI_MUL_2;
 constexpr float PI_MUL_4_INV = 1.0f / PI_MUL_4;
 
+constexpr float UNIT_SPHERE_VOLUME = 4.0f / 3.0f * PI;
+
 constexpr float RAY_EPS = 1e-5f;
 
 inline float rad2deg(float rad) { return 180.0f * rad / PI; }

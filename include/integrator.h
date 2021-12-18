@@ -263,8 +263,10 @@ class PPM : public Integrator {
 
   // number of emitted photons
   uint32_t nEmittedPhotons;
-  // global search radius for radiance estimation
+  // global photon search radius for surface radiance estimation
   float globalRadius;
+  // global photon search radius for volume radiance estimation
+  float globalRadiusVolume;
 
   PhotonMap photonMap;
   PhotonMap volumePhotonMap;
@@ -285,6 +287,25 @@ class PPM : public Integrator {
       Lo += f * photon.throughput;
     }
     Lo /= Vec3f(nPhotons * PI * globalRadius * globalRadius);
+
+    return Lo;
+  }
+
+  // compute in-scattering radiance with volume photon map
+  Vec3f computeRadianceWithVolumePhotonMap(const Vec3f& wo, const Vec3f& pos,
+                                           const Medium* medium) const {
+    // get nearby photons
+    const std::vector<int> photon_indices =
+        volumePhotonMap.queryPhotonsInRange(pos, globalRadiusVolume);
+
+    Vec3f Lo;
+    for (const int photon_idx : photon_indices) {
+      const Photon& photon = volumePhotonMap.getIthPhoton(photon_idx);
+      const Vec3f f = medium->evalPhaseFunction(wo, photon.wi);
+      Lo += f * photon.throughput;
+    }
+    Lo /= Vec3f(nPhotons * UNIT_SPHERE_VOLUME * globalRadiusVolume *
+                globalRadiusVolume * globalRadiusVolume);
 
     return Lo;
   }
