@@ -583,6 +583,7 @@ class PPM : public Integrator {
         nPhotons(nPhotons),
         alpha(alpha),
         globalRadius(initialRadius),
+        globalRadiusVolume(initialRadius),
         maxDepth(maxDepth),
         nEmittedPhotons(0) {}
 
@@ -594,7 +595,7 @@ class PPM : public Integrator {
       samplers[i]->setSeed(sampler.getSeed() * (i + 1));
 
       // warpup sampler
-      for (int j = 0; j < 10; ++j) {
+      for (int j = 0; j < 100; ++j) {
         samplers[i]->getNext1D();
       }
     }
@@ -656,9 +657,11 @@ class PPM : public Integrator {
         }
       }
 
-      // update search radius
+      // update photon search radius
       globalRadius =
           std::sqrt((iteration + alpha) / (iteration + 1)) * globalRadius;
+      globalRadiusVolume =
+          std::cbrt((iteration + alpha) / (iteration + 1)) * globalRadiusVolume;
 
       // save image at each iteration
       // Image image_copied = image;
