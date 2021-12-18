@@ -390,12 +390,14 @@ class PPM : public Integrator {
             is_scattered = medium->sampleMedium(ray, info.t, sampler_per_thread,
                                                 pos, dir, throughput_medium);
 
-            // add photon to the volume photon map when scattering occured
+            // add photon to the volume photon map when in-scattering occured
             if (is_scattered) {
 #pragma omp critical
               {
-                photons_volume.emplace_back(ray.throughput * throughput_medium,
-                                            pos, -ray.direction);
+                const Vec3f sigma_s = medium->getSigma_s(pos);
+                photons_volume.emplace_back(
+                    ray.throughput * throughput_medium / sigma_s, pos,
+                    -ray.direction);
               }
             }
 
@@ -503,8 +505,9 @@ class PPM : public Integrator {
           // if in-scattering occured, compute in-scattering radiance with
           // volume photon map
           if (is_scattered) {
-            return ray.throughput * computeRadianceWithVolumePhotonMap(
-                                        -ray.direction, pos, medium);
+            return ray.throughput * throughput_medium *
+                   computeRadianceWithVolumePhotonMap(-ray.direction, pos,
+                                                      medium);
           }
 
           // advance ray
@@ -606,7 +609,9 @@ class PPM : public Integrator {
     spdlog::info("[PPM] rendering...");
     for (uint32_t iteration = 0; iteration < nIterations; ++iteration) {
       spdlog::info("[PPM] iteration: {}", iteration);
-      spdlog::info("[PPM] radius: {}", globalRadius);
+      spdlog::info("[PPM] photon search radius: {}", globalRadius);
+      spdlog::info("[PPM] photon search radius(volume): {}",
+                   globalRadiusVolume);
 
       // clear previous photon map
       photonMap.clear();
