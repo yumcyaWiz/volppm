@@ -149,6 +149,8 @@ struct Vec3 {
     }
     return *this;
   }
+
+  const T* getPtr() const { return &v[0]; }
 };
 
 template <typename T>
