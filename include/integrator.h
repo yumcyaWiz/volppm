@@ -246,7 +246,7 @@ class PathTracing : public PathIntegrator {
   }
 };
 
-// this implementation is based on modified version of original SPPM
+// this implementation is based on modified version of original PPM
 //  Knaus, Claude, and Matthias Zwicker.
 // "Progressive photon mapping: A probabilistic approach." ACM Transactions on
 // Graphics (TOG) 30.3 (2011): 1-13.
@@ -267,19 +267,21 @@ class PPM : public Integrator {
   float globalRadius;
 
   PhotonMap photonMap;
+  PhotonMap volumePhotonmap;
 
   // compute reflected radiance with photon map
   Vec3f computeRadianceWithPhotonMap(const Vec3f& wo,
-                                     const IntersectInfo& info) const {
+                                     const SurfaceInfo& surface_info,
+                                     const Primitive* hit_primitive) const {
     // get nearby photons
     const std::vector<int> photon_indices =
-        photonMap.queryPhotonsInRange(info.surfaceInfo.position, globalRadius);
+        photonMap.queryPhotonsInRange(surface_info.position, globalRadius);
 
     Vec3f Lo;
     for (const int photon_idx : photon_indices) {
       const Photon& photon = photonMap.getIthPhoton(photon_idx);
-      const Vec3f f = info.hitPrimitive->evaluateBxDF(
-          wo, photon.wi, info.surfaceInfo, TransportDirection::FROM_CAMERA);
+      const Vec3f f = hit_primitive->evaluateBxDF(
+          wo, photon.wi, surface_info, TransportDirection::FROM_CAMERA);
       Lo += f * photon.throughput;
     }
     Lo /= Vec3f(nPhotons * PI * globalRadius * globalRadius);
@@ -413,8 +415,9 @@ class PPM : public Integrator {
         // if hitting diffuse surface, compute reflected radiance with photon
         // map
         if (bxdf_type == BxDFType::DIFFUSE) {
-          return throughput *
-                 computeRadianceWithPhotonMap(-ray.direction, info);
+          return throughput * computeRadianceWithPhotonMap(-ray.direction,
+                                                           info.surfaceInfo,
+                                                           info.hitPrimitive);
         }
         // if hitting specular surface, generate next ray and continue tracing
         else if (bxdf_type == BxDFType::SPECULAR) {
