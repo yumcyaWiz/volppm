@@ -450,14 +450,15 @@ class PPM : public Integrator {
   Vec3f integrate(const Ray& ray_in, const Scene& scene,
                   Sampler& sampler) const {
     Ray ray = ray_in;
-    Vec3f throughput(1, 1, 1);
+    ray.throughput = Vec3f(1, 1, 1);
 
-    for (uint32_t k = 0; k < maxDepth; ++k) {
+    uint32_t depth = 0;
+    while (depth < maxDepth) {
       IntersectInfo info;
       if (scene.intersect(ray, info)) {
         // when directly hitting light
         if (info.hitPrimitive->hasAreaLight()) {
-          return throughput *
+          return ray.throughput *
                  info.hitPrimitive->Le(info.surfaceInfo, -ray.direction);
         }
 
@@ -466,9 +467,9 @@ class PPM : public Integrator {
         // if hitting diffuse surface, compute reflected radiance with photon
         // map
         if (bxdf_type == BxDFType::DIFFUSE) {
-          return throughput * computeRadianceWithPhotonMap(-ray.direction,
-                                                           info.surfaceInfo,
-                                                           info.hitPrimitive);
+          return ray.throughput *
+                 computeRadianceWithPhotonMap(-ray.direction, info.surfaceInfo,
+                                              info.hitPrimitive);
         }
         // if hitting specular surface, generate next ray and continue tracing
         else if (bxdf_type == BxDFType::SPECULAR) {
@@ -479,16 +480,24 @@ class PPM : public Integrator {
               -ray.direction, info.surfaceInfo, TransportDirection::FROM_CAMERA,
               sampler, dir, pdf_dir);
 
-          // update throughput and ray
-          throughput *= f *
-                        cosTerm(-ray.direction, dir, info.surfaceInfo,
-                                TransportDirection::FROM_CAMERA) /
-                        pdf_dir;
-          ray = Ray(info.surfaceInfo.position, dir);
+          // update throughput
+          ray.throughput *= f *
+                            cosTerm(-ray.direction, dir, info.surfaceInfo,
+                                    TransportDirection::FROM_CAMERA) /
+                            pdf_dir;
+
+          // update ray
+          ray.origin = info.surfaceInfo.position;
+          ray.direction = dir;
         }
       } else {
         // ray goes out the the sky
         break;
+      }
+
+      // update depth
+      if (true) {
+        depth++;
       }
     }
 
