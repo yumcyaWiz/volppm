@@ -153,7 +153,7 @@ class PathTracing : public PathIntegrator {
           if (sampler.getNext1D() >= russian_roulette_prob) {
             break;
           }
-          throughput /= russian_roulette_prob;
+          throughput /= Vec3f(russian_roulette_prob);
         }
 
         // Le
@@ -220,7 +220,7 @@ class PPM : public Integrator {
           wo, photon.wi, info.surfaceInfo, TransportDirection::FROM_CAMERA);
       Lo += f * photon.throughput;
     }
-    Lo /= (nPhotons * PI * globalRadius * globalRadius);
+    Lo /= Vec3f(nPhotons * PI * globalRadius * globalRadius);
 
     return Lo;
   }
@@ -300,7 +300,7 @@ class PPM : public Integrator {
             if (sampler_per_thread.getNext1D() >= russian_roulette_prob) {
               break;
             }
-            throughput /= russian_roulette_prob;
+            throughput /= Vec3f(russian_roulette_prob);
           }
 
           // sample direction by BxDF
