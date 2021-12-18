@@ -456,6 +456,18 @@ class PPM : public Integrator {
     while (depth < maxDepth) {
       IntersectInfo info;
       if (scene.intersect(ray, info)) {
+        // russian roulette
+        if (depth > 0) {
+          const float russian_roulette_prob =
+              std::min(std::max(ray.throughput[0],
+                                std::max(ray.throughput[1], ray.throughput[2])),
+                       1.0f);
+          if (sampler.getNext1D() >= russian_roulette_prob) {
+            break;
+          }
+          ray.throughput /= Vec3f(russian_roulette_prob);
+        }
+
         // when directly hitting light
         if (info.hitPrimitive->hasAreaLight()) {
           return ray.throughput *
