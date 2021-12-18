@@ -267,7 +267,7 @@ class PPM : public Integrator {
   float globalRadius;
 
   PhotonMap photonMap;
-  PhotonMap volumePhotonmap;
+  PhotonMap volumePhotonMap;
 
   // compute reflected radiance with photon map
   Vec3f computeRadianceWithPhotonMap(const Vec3f& wo,
@@ -290,8 +290,7 @@ class PPM : public Integrator {
   }
 
   // sample initial ray from light and compute initial throughput
-  Ray sampleRayFromLight(const Scene& scene, Sampler& sampler,
-                         Vec3f& throughput) {
+  Ray sampleRayFromLight(const Scene& scene, Sampler& sampler) {
     // sample light
     float light_choose_pdf;
     const std::shared_ptr<Light> light =
@@ -307,10 +306,12 @@ class PPM : public Integrator {
         light->sampleDirection(light_surf, sampler, light_dir_pdf);
 
     // spawn ray
-    Ray ray(light_surf.position, dir);
-    throughput = light->Le(light_surf, dir) /
-                 (light_choose_pdf * light_pos_pdf * light_dir_pdf) *
-                 std::abs(dot(dir, light_surf.shadingNormal));
+    Ray ray;
+    ray.origin = light_surf.position;
+    ray.direction = dir;
+    ray.throughput = light->Le(light_surf, dir) /
+                     (light_choose_pdf * light_pos_pdf * light_dir_pdf) *
+                     std::abs(dot(dir, light_surf.shadingNormal));
 
     return ray;
   }
@@ -320,79 +321,129 @@ class PPM : public Integrator {
                       std::vector<std::unique_ptr<Sampler>>& samplers) {
     // photon tracing
     std::vector<Photon> photons;
+    std::vector<Photon> photons_volume;
 
-    // spdlog::info("[PPMAPA] tracing photons...");
 #pragma omp parallel for
     for (uint32_t i = 0; i < nPhotons; ++i) {
       auto& sampler_per_thread = *samplers[omp_get_thread_num()];
 
       // sample initial ray from light and set initial throughput
-      Vec3f throughput;
-      Ray ray = sampleRayFromLight(scene, sampler_per_thread, throughput);
+      Ray ray = sampleRayFromLight(scene, sampler_per_thread);
 
       // trace photons
-      // whener hitting diffuse surface, add photon to the photon array
-      // recursively tracing photon with russian roulette
-      for (uint32_t k = 0; k < maxDepth; ++k) {
-        if (std::isnan(throughput[0]) || std::isnan(throughput[1]) ||
-            std::isnan(throughput[2])) {
+      uint32_t depth = 0;
+      while (depth < maxDepth) {
+        // invalid throughput check
+        if (std::isnan(ray.throughput[0]) || std::isnan(ray.throughput[1]) ||
+            std::isnan(ray.throughput[2])) {
           spdlog::error("[PPM] photon throughput is NaN");
           break;
-        } else if (throughput[0] < 0 || throughput[1] < 0 ||
-                   throughput[2] < 0) {
+        } else if (ray.throughput[0] < 0 || ray.throughput[1] < 0 ||
+                   ray.throughput[2] < 0) {
           spdlog::error("[PPM] photon throughput is minus");
           break;
         }
 
         IntersectInfo info;
         if (scene.intersect(ray, info)) {
-          const BxDFType bxdf_type = info.hitPrimitive->getBxDFType();
-          if (bxdf_type == BxDFType::DIFFUSE) {
-            // TODO: remove lock to get more speed
-#pragma omp critical
-            {
-              photons.emplace_back(throughput, info.surfaceInfo.position,
-                                   -ray.direction);
-            }
-          }
-
           // russian roulette
-          if (k > 0) {
+          if (depth > 0) {
             const float russian_roulette_prob = std::min(
-                std::max(throughput[0], std::max(throughput[1], throughput[2])),
+                std::max(ray.throughput[0],
+                         std::max(ray.throughput[1], ray.throughput[2])),
                 1.0f);
             if (sampler_per_thread.getNext1D() >= russian_roulette_prob) {
               break;
             }
-            throughput /= Vec3f(russian_roulette_prob);
+            ray.throughput /= Vec3f(russian_roulette_prob);
           }
 
-          // sample direction by BxDF
-          Vec3f dir;
-          float pdf_dir;
-          const Vec3f f = info.hitPrimitive->sampleBxDF(
-              -ray.direction, info.surfaceInfo, TransportDirection::FROM_LIGHT,
-              sampler_per_thread, dir, pdf_dir);
+          // sample medium
+          bool is_scattered = false;
+          if (ray.hasMedium()) {
+            const Medium* medium = ray.getCurrentMedium();
 
-          // update throughput and ray
-          throughput *= f *
-                        cosTerm(-ray.direction, dir, info.surfaceInfo,
-                                TransportDirection::FROM_LIGHT) /
-                        pdf_dir;
-          ray = Ray(info.surfaceInfo.position, dir);
+            Vec3f pos;
+            Vec3f dir;
+            Vec3f throughput_medium;
+            is_scattered = medium->sampleMedium(ray, info.t, sampler_per_thread,
+                                                pos, dir, throughput_medium);
+
+            // add photon to the volume photon map when scattering occured
+            if (is_scattered) {
+#pragma omp critical
+              {
+                photons_volume.emplace_back(ray.throughput * throughput_medium,
+                                            pos, -ray.direction);
+              }
+            }
+
+            // advance ray
+            ray.origin = pos;
+            ray.direction = dir;
+
+            // update throughput
+            ray.throughput *= throughput_medium;
+          }
+
+          bool is_reflected_or_refracted = false;
+          if (!is_scattered) {
+            Vec3f dir = ray.direction;
+            if (info.hitPrimitive->hasSurface()) {
+              const BxDFType bxdf_type = info.hitPrimitive->getBxDFType();
+
+              // add photon whenever hitting diffuse surface
+              if (bxdf_type == BxDFType::DIFFUSE) {
+#pragma omp critical
+                {
+                  photons.emplace_back(ray.throughput,
+                                       info.surfaceInfo.position,
+                                       -ray.direction);
+                }
+              }
+
+              // sample direction by BxDF
+              float pdf_dir;
+              const Vec3f f = info.hitPrimitive->sampleBxDF(
+                  -ray.direction, info.surfaceInfo,
+                  TransportDirection::FROM_LIGHT, sampler_per_thread, dir,
+                  pdf_dir);
+
+              // update throughput
+              ray.throughput *= f *
+                                cosTerm(-ray.direction, dir, info.surfaceInfo,
+                                        TransportDirection::FROM_LIGHT) /
+                                pdf_dir;
+
+              is_reflected_or_refracted = true;
+            }
+
+            // update ray's medium
+            updateMedium(ray, dir, info);
+
+            // update ray
+            ray.origin = info.surfaceInfo.position;
+            ray.direction = dir;
+          }
+
+          // update depth
+          if (is_scattered || is_reflected_or_refracted) {
+            depth++;
+          }
         } else {
           // photon goes to the sky
           break;
         }
       }
     }
-    // spdlog::info("[PPMAPA] done");
 
     // build photon map
-    // spdlog::info("[PPMAPA] building photon map...");
     photonMap.setPhotons(photons);
     photonMap.build();
-    // spdlog::info("[PPMAPA] done");
+
+    // build volume photon map
+    volumePhotonMap.setPhotons(photons_volume);
+    volumePhotonMap.build();
   }
 
   // compute incoming radiance with photon map
