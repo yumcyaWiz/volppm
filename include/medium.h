@@ -92,6 +92,8 @@ class Medium {
  public:
   Medium(float g) : phaseFunction(std::make_shared<HenyeyGreenstein>(g)) {}
 
+  virtual Vec3f getSigma_s(const Vec3f& pos) const = 0;
+
   // false means there is no collision
   virtual bool sampleMedium(const Ray& ray, float distToSurface,
                             Sampler& sampler, Vec3f& pos, Vec3f& dir,
@@ -118,6 +120,8 @@ class HomogeneousMedium : public Medium {
         sigma_a(sigma_a),
         sigma_s(sigma_s),
         sigma_t(sigma_a + sigma_s) {}
+
+  Vec3f getSigma_s(const Vec3f& pos) const override { return sigma_s; }
 
   // NOTE: ignore emission
   bool sampleMedium(const Ray& ray, float distToSurface, Sampler& sampler,
