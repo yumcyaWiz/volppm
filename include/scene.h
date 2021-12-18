@@ -17,35 +17,7 @@
 //
 #include "tiny_obj_loader.h"
 
-const std::shared_ptr<BxDF> createDefaultBxDF() {
-  return std::make_shared<Lambert>(Vec3(0.9f));
-}
-
-// create BxDF from tinyobj material
-const std::shared_ptr<BxDF> createBxDF(const tinyobj::material_t& material) {
-  if (material.unknown_parameter.count("no_surface") == 1) {
-    return nullptr;
-  }
-
-  const Vec3f kd =
-      Vec3f(material.diffuse[0], material.diffuse[1], material.diffuse[2]);
-  const Vec3f ks =
-      Vec3f(material.specular[0], material.specular[1], material.specular[2]);
-
-  switch (material.illum) {
-    case 5:
-      // mirror
-      return std::make_shared<Mirror>(Vec3(1.0f));
-    case 7:
-      // glass
-      return std::make_shared<Glass>(Vec3(1.0f), material.ior);
-    default:
-      // lambert
-      return std::make_shared<Lambert>(kd);
-  }
-}
-
-const std::shared_ptr<Medium> createDefaultMedium() { return nullptr; }
+inline float parseFloat(const std::string& str) { return std::stof(str); }
 
 inline Vec3f parseVec3(const std::string& str) {
   // split string by space
@@ -68,20 +40,73 @@ inline Vec3f parseVec3(const std::string& str) {
                std::stof(tokens[2]));
 }
 
-// create Medium from tinyobj material
-const std::shared_ptr<Medium> createMedium(
+inline std::optional<std::string> getMaterialParameter(
+    const tinyobj::material_t& material, const std::string& parameter_name) {
+  std::optional<std::string> ret;
+  if (material.unknown_parameter.count(parameter_name)) {
+    ret = material.unknown_parameter.at(parameter_name);
+  }
+  return ret;
+}
+
+inline const std::shared_ptr<BxDF> createDefaultBxDF() {
+  return std::make_shared<Lambert>(Vec3(0.9f));
+}
+
+// create BxDF from tinyobj material
+inline const std::shared_ptr<BxDF> createBxDF(
     const tinyobj::material_t& material) {
-  if (material.unknown_parameter.count("g") == 1 &&
-      material.unknown_parameter.count("medium_color") == 1 &&
-      material.unknown_parameter.count("scattering_distance") == 1) {
-    const float g = std::stof(material.unknown_parameter.at("g"));
+  if (material.unknown_parameter.count("no_surface") == 1) {
+    return nullptr;
+  }
+
+  const Vec3f kd =
+      Vec3f(material.diffuse[0], material.diffuse[1], material.diffuse[2]);
+  const Vec3f ks =
+      Vec3f(material.specular[0], material.specular[1], material.specular[2]);
+
+  switch (material.illum) {
+    case 5:
+      // mirror
+      return std::make_shared<Mirror>(Vec3(1.0f));
+    case 7:
+      // glass
+      return std::make_shared<Glass>(Vec3(1.0f), material.ior);
+    default:
+      // lambert
+      return std::make_shared<Lambert>(kd);
+  }
+}
+
+inline const std::shared_ptr<Medium> createDefaultMedium() { return nullptr; }
+
+// create Medium from tinyobj material
+inline const std::shared_ptr<Medium> createMedium(
+    const tinyobj::material_t& material) {
+  std::optional<std::string> g_opt = getMaterialParameter(material, "g");
+  std::optional<std::string> sigma_a_opt =
+      getMaterialParameter(material, "sigma_a");
+  std::optional<std::string> sigma_s_opt =
+      getMaterialParameter(material, "sigma_s");
+  if (g_opt && sigma_a_opt && sigma_s_opt) {
+    const float g = parseFloat(g_opt.value());
+    const Vec3f sigma_a = parseVec3(sigma_a_opt.value());
+    const Vec3f sigma_s = parseVec3(sigma_s_opt.value());
+    return std::make_shared<HomogeneousMedium>(g, sigma_a, sigma_s);
+  }
+
+  std::optional<std::string> medium_color_opt =
+      getMaterialParameter(material, "medium_color");
+  std::optional<std::string> scattering_distance_opt =
+      getMaterialParameter(material, "scattering_distance");
+  if (g_opt && medium_color_opt && scattering_distance_opt) {
+    const float g = parseFloat(g_opt.value());
 
     // Chiang, Matt Jen-Yuan, Peter Kutz, and Brent Burley. "Practical and
     // controllable subsurface scattering for production path tracing." ACM
     // SIGGRAPH 2016 Talks. 2016. 1-2.
-    const Vec3f A = parseVec3(material.unknown_parameter.at("medium_color"));
-    const Vec3f d =
-        parseVec3(material.unknown_parameter.at("scattering_distance"));
+    const Vec3f A = parseVec3(medium_color_opt.value());
+    const Vec3f d = parseVec3(scattering_distance_opt.value());
     const Vec3f alpha =
         Vec3f(1.0f) - exp(-5.09406 * A + 2.61188 * A * A - 4.31805 * A * A * A);
     const Vec3f s = Vec3f(1.9) - A + Vec3f(3.5) * (A - 0.8) * (A - 0.8);
@@ -89,21 +114,14 @@ const std::shared_ptr<Medium> createMedium(
 
     const Vec3f sigma_s = alpha * sigma_t;
     const Vec3f sigma_a = sigma_t - sigma_s;
-    // const Vec3f sigma_s = Vec3f(0.05, 0.99, 0.5);
-    // const Vec3f sigma_a = Vec3f(0.001, 0.001, 0.001);
-
-    // spdlog::info("sigma_a: ({}, {}, {})", sigma_a[0], sigma_a[1],
-    // sigma_a[2]); spdlog::info("sigma_s: ({}, {}, {})", sigma_s[0],
-    // sigma_s[1], sigma_s[2]);
-
     return std::make_shared<HomogeneousMedium>(g, sigma_a, sigma_s);
-  } else {
-    return nullptr;
   }
+
+  return nullptr;
 }
 
 // create AreaLight from tinyobj material
-const std::shared_ptr<AreaLight> createAreaLight(
+inline const std::shared_ptr<AreaLight> createAreaLight(
     const tinyobj::material_t& material, const Triangle* tri) {
   if (material.emission[0] > 0 || material.emission[1] > 0 ||
       material.emission[2] > 0) {
