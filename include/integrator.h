@@ -48,6 +48,28 @@ class Integrator {
       std::exit(EXIT_FAILURE);
     }
   }
+
+  static bool isTransmitted(const Vec3f& wo, const Vec3f& wi, const Vec3f& n) {
+    return (dot(wo, n) < 0) != (dot(wi, n) < 0);
+  }
+
+  static bool isEntered(const Vec3f& wi, const Vec3f& n) {
+    return dot(wi, n) < 0;
+  }
+
+  // push or pop medium
+  static void updateMedium(Ray& ray, const Vec3f& wi,
+                           const IntersectInfo& info) {
+    if (isTransmitted(-ray.direction, wi, info.surfaceInfo.shadingNormal)) {
+      if (isEntered(wi, info.surfaceInfo.shadingNormal)) {
+        if (info.hitPrimitive->hasMedium()) {
+          ray.pushMedium(info.hitPrimitive->getMedium());
+        }
+      } else {
+        ray.popMedium();
+      }
+    }
+  }
 };
 
 // abstraction of path based integrator
@@ -125,8 +147,7 @@ class PathIntegrator : public Integrator {
   }
 };
 
-// implementation of path tracing
-// NOTE: for reference purpose
+// implementation of volumetric unidirectional path tracing
 class PathTracing : public PathIntegrator {
  private:
   const uint32_t maxDepth;
@@ -140,42 +161,83 @@ class PathTracing : public PathIntegrator {
                   Sampler& sampler) const override {
     Vec3f radiance(0);
     Ray ray = ray_in;
-    Vec3f throughput(1, 1, 1);
+    ray.throughput = Vec3f(1, 1, 1);
 
-    for (uint32_t k = 0; k < maxDepth; ++k) {
+    uint32_t depth = 0;
+    while (depth < maxDepth) {
       IntersectInfo info;
       if (scene.intersect(ray, info)) {
         // russian roulette
-        if (k > 0) {
+        if (depth > 0) {
           const float russian_roulette_prob = std::min(
-              std::max(throughput[0], std::max(throughput[1], throughput[2])),
+              (ray.throughput[0] + ray.throughput[1] + ray.throughput[2]) /
+                  3.0f,
               1.0f);
           if (sampler.getNext1D() >= russian_roulette_prob) {
             break;
           }
-          throughput /= Vec3f(russian_roulette_prob);
+          ray.throughput /= Vec3f(russian_roulette_prob);
         }
 
-        // Le
-        if (info.hitPrimitive->hasAreaLight()) {
-          radiance += throughput *
-                      info.hitPrimitive->Le(info.surfaceInfo, -ray.direction);
+        // sample medium
+        bool is_scattered = false;
+        if (ray.hasMedium()) {
+          const Medium* medium = ray.getCurrentMedium();
+
+          Vec3f pos;
+          Vec3f dir;
+          Vec3f throughput_medium;
+          is_scattered = medium->sampleMedium(ray, info.t, sampler, pos, dir,
+                                              throughput_medium);
+
+          // advance ray
+          ray.origin = pos;
+          ray.direction = dir;
+
+          // update throughput
+          ray.throughput *= throughput_medium;
         }
 
-        // sample direction by BxDF
-        Vec3f dir;
-        float pdf_dir;
-        Vec3f f = info.hitPrimitive->sampleBxDF(
-            -ray.direction, info.surfaceInfo, TransportDirection::FROM_CAMERA,
-            sampler, dir, pdf_dir);
+        bool is_reflected_or_refracted = false;
+        if (!is_scattered) {
+          // Le
+          if (info.hitPrimitive->hasAreaLight()) {
+            radiance += ray.throughput *
+                        info.hitPrimitive->Le(info.surfaceInfo, -ray.direction);
+            break;
+          }
 
-        // update throughput and ray
-        throughput *= f *
-                      cosTerm(-ray.direction, dir, info.surfaceInfo,
-                              TransportDirection::FROM_CAMERA) /
-                      pdf_dir;
-        ray = Ray(info.surfaceInfo.position, dir);
+          // sample direction by BxDF
+          Vec3f dir = ray.direction;
+          if (info.hitPrimitive->hasSurface()) {
+            float pdf_dir;
+            const Vec3f f = info.hitPrimitive->sampleBxDF(
+                -ray.direction, info.surfaceInfo,
+                TransportDirection::FROM_CAMERA, sampler, dir, pdf_dir);
+
+            // update throughput
+            ray.throughput *= f *
+                              cosTerm(-ray.direction, dir, info.surfaceInfo,
+                                      TransportDirection::FROM_CAMERA) /
+                              pdf_dir;
+
+            is_reflected_or_refracted = true;
+          }
+
+          // update ray's medium
+          updateMedium(ray, dir, info);
+
+          // update ray
+          ray.origin = info.surfaceInfo.position;
+          ray.direction = dir;
+        }
+
+        // update depth
+        if (is_scattered || is_reflected_or_refracted) {
+          depth++;
+        }
       } else {
+        // ray goes out to the sky
         break;
       }
     }
