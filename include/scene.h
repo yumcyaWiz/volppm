@@ -6,19 +6,27 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <sstream>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "core.h"
+#include "medium.h"
 #include "primitive.h"
+//
 #include "tiny_obj_loader.h"
 
-// create default BxDF
 const std::shared_ptr<BxDF> createDefaultBxDF() {
   return std::make_shared<Lambert>(Vec3(0.9f));
 }
 
 // create BxDF from tinyobj material
 const std::shared_ptr<BxDF> createBxDF(const tinyobj::material_t& material) {
+  if (material.unknown_parameter.count("no_surface") == 1) {
+    return nullptr;
+  }
+
   const Vec3f kd =
       Vec3f(material.diffuse[0], material.diffuse[1], material.diffuse[2]);
   const Vec3f ks =
@@ -34,6 +42,63 @@ const std::shared_ptr<BxDF> createBxDF(const tinyobj::material_t& material) {
     default:
       // lambert
       return std::make_shared<Lambert>(kd);
+  }
+}
+
+const std::shared_ptr<Medium> createDefaultMedium() { return nullptr; }
+
+inline Vec3f parseVec3(const std::string& str) {
+  // split string by space
+  std::vector<std::string> tokens;
+  std::stringstream ss(str);
+  std::string buf;
+  while (std::getline(ss, buf, ' ')) {
+    if (!buf.empty()) {
+      tokens.emplace_back(buf);
+    }
+  }
+
+  if (tokens.size() != 3) {
+    spdlog::error("invalid vec3 string");
+    std::exit(EXIT_FAILURE);
+  }
+
+  // string to float conversion
+  return Vec3f(std::stof(tokens[0]), std::stof(tokens[1]),
+               std::stof(tokens[2]));
+}
+
+// create Medium from tinyobj material
+const std::shared_ptr<Medium> createMedium(
+    const tinyobj::material_t& material) {
+  if (material.unknown_parameter.count("g") == 1 &&
+      material.unknown_parameter.count("medium_color") == 1 &&
+      material.unknown_parameter.count("scattering_distance") == 1) {
+    const float g = std::stof(material.unknown_parameter.at("g"));
+
+    // Chiang, Matt Jen-Yuan, Peter Kutz, and Brent Burley. "Practical and
+    // controllable subsurface scattering for production path tracing." ACM
+    // SIGGRAPH 2016 Talks. 2016. 1-2.
+    const Vec3f A = parseVec3(material.unknown_parameter.at("medium_color"));
+    const Vec3f d =
+        parseVec3(material.unknown_parameter.at("scattering_distance"));
+    const Vec3f alpha =
+        Vec3f(1.0f) - exp(-5.09406 * A + 2.61188 * A * A - 4.31805 * A * A * A);
+    const Vec3f s = Vec3f(1.9) - A + Vec3f(3.5) * (A - 0.8) * (A - 0.8);
+    const Vec3f sigma_t = 1.0f / (d * s);
+
+    const Vec3f sigma_s = alpha * sigma_t;
+    const Vec3f sigma_a = sigma_t - sigma_s;
+    // const Vec3f sigma_s = Vec3f(0.05, 0.99, 0.5);
+    // const Vec3f sigma_a = Vec3f(0.001, 0.001, 0.001);
+
+    // spdlog::info("sigma_a: ({}, {}, {})", sigma_a[0], sigma_a[1],
+    // sigma_a[2]); spdlog::info("sigma_s: ({}, {}, {})", sigma_s[0],
+    // sigma_s[1], sigma_s[2]);
+
+    return std::make_shared<HomogeneousMedium>(g, sigma_a, sigma_s);
+  } else {
+    return nullptr;
   }
 }
 
@@ -59,7 +124,7 @@ class Scene {
   std::vector<float> normals;
   std::vector<float> texcoords;
 
-  std::vector<std::optional<tinyobj::material_t>> materials;
+  std::unordered_map<uint32_t, std::optional<tinyobj::material_t>> materials;
 
   // triangles
   // NOTE: per face
@@ -67,11 +132,16 @@ class Scene {
 
   // BxDFs
   // NOTE: per face
-  std::vector<std::shared_ptr<BxDF>> bxdfs;
+  std::unordered_map<uint32_t, std::shared_ptr<BxDF>> bxdfs;
+
+  // mediums
+  // NOTE: per face
+  std::unordered_map<uint32_t, std::shared_ptr<Medium>> mediums;
 
   // lights
   // NOTE: per face
-  std::vector<std::shared_ptr<Light>> lights;
+  std::unordered_map<uint32_t, std::shared_ptr<Light>> lights;
+  std::vector<std::shared_ptr<Light>> lights_for_sampling;
 
   // primitives
   // NOTE: per face
@@ -80,8 +150,6 @@ class Scene {
   // embree
   RTCDevice device;
   RTCScene scene;
-
-  bool hasLight(uint32_t faceID) const { return lights[faceID] != nullptr; }
 
   void clear() {
     vertices.clear();
@@ -98,6 +166,7 @@ class Scene {
 
  public:
   Scene() {}
+
   ~Scene() {
     clear();
     rtcReleaseScene(scene);
@@ -106,7 +175,7 @@ class Scene {
 
   // load obj file
   // TODO: remove vertex duplication
-  void loadModel(const std::filesystem::path& filepath) {
+  void loadObj(const std::filesystem::path& filepath) {
     clear();
 
     spdlog::info("[Scene] loading: {}", filepath.generic_string());
@@ -213,70 +282,25 @@ class Scene {
         }
 
         // populate materials
+        // TODO: remove duplicate
         const int materialID = shapes[s].mesh.material_ids[f];
         std::optional<tinyobj::material_t> material = std::nullopt;
         if (materialID != -1) {
           material = materials[materialID];
         }
-        this->materials.push_back(material);
+        const uint32_t faceID = this->indices.size() / 3 - 1;
+        this->materials.emplace(faceID, material);
 
         index_offset += fv;
       }
     }
-
-    // populate  triangles
-    for (size_t faceID = 0; faceID < nFaces(); ++faceID) {
-      // add triangle
-      this->triangles.emplace_back(this->vertices.data(), this->indices.data(),
-                                   this->normals.data(), this->texcoords.data(),
-                                   faceID);
-    }
-
-    // populate bxdfs
-    for (size_t faceID = 0; faceID < nFaces(); ++faceID) {
-      // add bxdf
-      // TODO: remove duplicate
-      const auto material = this->materials[faceID];
-      if (material) {
-        const tinyobj::material_t& m = material.value();
-        this->bxdfs.push_back(createBxDF(m));
-      }
-      // default material
-      else {
-        this->bxdfs.push_back(createDefaultBxDF());
-      }
-    }
-
-    // populate lights, primitives
-    for (size_t faceID = 0; faceID < nFaces(); ++faceID) {
-      // add light
-      std::shared_ptr<Light> light = nullptr;
-      const auto material = this->materials[faceID];
-      if (material) {
-        const tinyobj::material_t& m = material.value();
-        light = createAreaLight(m, &this->triangles[faceID]);
-        if (light != nullptr) {
-          lights.push_back(light);
-        }
-      }
-
-      // add primitive
-      primitives.emplace_back(&this->triangles[faceID], this->bxdfs[faceID],
-                              light);
-    }
-
-    spdlog::info("[Scene] vertices: {}", nVertices());
-    spdlog::info("[Scene] faces: {}", nFaces());
-    spdlog::info("[Scene] lights: {}", lights.size());
   }
 
   uint32_t nVertices() const { return vertices.size() / 3; }
+
   uint32_t nFaces() const { return indices.size() / 3; }
 
-  void build() {
-    spdlog::info("[Scene] building scene...");
-
-    // setup embree
+  void setupEmbree() {
     device = rtcNewDevice(NULL);
     scene = rtcNewScene(device);
 
@@ -302,8 +326,70 @@ class Scene {
     rtcAttachGeometry(scene, geom);
     rtcReleaseGeometry(geom);
     rtcCommitScene(scene);
+  }
+
+  void build() {
+    spdlog::info("[Scene] building scene...");
+
+    // populate  triangles
+    for (size_t faceID = 0; faceID < nFaces(); ++faceID) {
+      // add triangle
+      this->triangles.emplace_back(this->vertices.data(), this->indices.data(),
+                                   this->normals.data(), this->texcoords.data(),
+                                   faceID);
+    }
+
+    // populate bxdfs, mediums
+    for (const auto& kv : this->materials) {
+      const uint32_t faceID = kv.first;
+      const auto& material = kv.second;
+
+      if (material) {
+        const tinyobj::material_t& m = material.value();
+        this->bxdfs.emplace(faceID, createBxDF(m));
+        this->mediums.emplace(faceID, createMedium(m));
+      } else {
+        this->bxdfs.emplace(faceID, createDefaultBxDF());
+        this->mediums.emplace(faceID, createDefaultMedium());
+      }
+    }
+
+    // populate lights
+    for (const auto& kv : this->materials) {
+      const uint32_t faceID = kv.first;
+      const auto& material = kv.second;
+
+      std::shared_ptr<Light> light = nullptr;
+      if (material) {
+        const tinyobj::material_t& m = material.value();
+        light = createAreaLight(m, &this->triangles[faceID]);
+      }
+      this->lights.emplace(faceID, light);
+    }
+
+    // populate light for sampling
+    for (const auto& kv : this->lights) {
+      const uint32_t faceID = kv.first;
+      const auto& light = kv.second;
+      if (light != nullptr) {
+        this->lights_for_sampling.push_back(light);
+      }
+    }
+
+    // populate primitives
+    for (size_t faceID = 0; faceID < nFaces(); ++faceID) {
+      // add primitive
+      primitives.emplace_back(
+          &this->triangles[faceID], this->bxdfs.at(faceID).get(),
+          this->mediums.at(faceID).get(), this->lights.at(faceID).get());
+    }
+
+    setupEmbree();
 
     spdlog::info("[Scene] done");
+    spdlog::info("[Scene] vertices: {}", nVertices());
+    spdlog::info("[Scene] faces: {}", nFaces());
+    spdlog::info("[Scene] lights: {}", lights_for_sampling.size());
   }
 
   // ray-scene intersection
@@ -351,10 +437,10 @@ class Scene {
   }
 
   std::shared_ptr<Light> sampleLight(Sampler& sampler, float& pdf) const {
-    unsigned int lightIdx = lights.size() * sampler.getNext1D();
-    if (lightIdx == lights.size()) lightIdx--;
-    pdf = 1.0f / lights.size();
-    return lights[lightIdx];
+    unsigned int lightIdx = lights_for_sampling.size() * sampler.getNext1D();
+    if (lightIdx == lights_for_sampling.size()) lightIdx--;
+    pdf = 1.0f / lights_for_sampling.size();
+    return lights_for_sampling[lightIdx];
   }
 };
 

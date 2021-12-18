@@ -5,27 +5,32 @@
 
 #include "light.h"
 #include "material.h"
+#include "medium.h"
 #include "triangle.h"
 
-// primitive provides an abstraction layer of the object's shape(triangle),
-// material, area light
+// primitive provides an abstraction layer of the objects in the scene
 class Primitive {
  private:
   const Triangle* triangle;
-  const std::shared_ptr<BxDF> bxdf;
-  const std::shared_ptr<Light> areaLight;
+  const BxDF* bxdf;
+  const Medium* medium;
+  const Light* areaLight;
 
  public:
-  Primitive(const Triangle* triangle, const std::shared_ptr<BxDF>& bxdf,
-            const std::shared_ptr<Light>& areaLight = nullptr)
-      : triangle(triangle), bxdf(bxdf), areaLight(areaLight) {}
+  Primitive(const Triangle* triangle, const BxDF* bxdf,
+            const Medium* medium = nullptr, const Light* areaLight = nullptr)
+      : triangle(triangle), bxdf(bxdf), medium(medium), areaLight(areaLight) {}
 
+  bool hasSurface() const { return bxdf != nullptr; }
+  bool hasMedium() const { return medium != nullptr; }
   bool hasAreaLight() const { return areaLight != nullptr; }
 
   // return emission
   Vec3f Le(const SurfaceInfo& surfInfo, const Vec3f& dir) const {
     return areaLight->Le(surfInfo, dir);
   }
+
+  const Medium* getMedium() const { return medium; }
 
   BxDFType getBxDFType() const { return bxdf->getType(); }
 
@@ -42,7 +47,7 @@ class Primitive {
   }
 
   // sample direction by BxDF
-  // its pdf is propotional to the shape od BxDF
+  // its pdf is propotional to the shape of BxDF
   Vec3f sampleBxDF(const Vec3f& wo, const SurfaceInfo& surfInfo,
                    const TransportDirection& mode, Sampler& sampler, Vec3f& wi,
                    float& pdf) const {
