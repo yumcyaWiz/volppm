@@ -108,7 +108,7 @@ class PathIntegrator : public Integrator {
         for (uint32_t k = 0; k < n_samples; ++k) {
           // SSAA
           const float u =
-              (2.0f * (j + sampler_per_pixel->getNext1D()) - width) / height;
+              -(2.0f * (j + sampler_per_pixel->getNext1D()) - width) / height;
           const float v =
               (2.0f * (i + sampler_per_pixel->getNext1D()) - height) / height;
 
@@ -530,15 +530,13 @@ class PPM : public Integrator {
 
       // clear previous photon map
       photonMap.clear();
+      volumePhotonMap.clear();
 
       // photon tracing and build photon map
-      // spdlog::info("[PPMAPA] photon tracing pass...");
       buildPhotonMap(scene, samplers);
       nEmittedPhotons += nPhotons;
-      // spdlog::info("[PPMAPA] done");
 
-      // eye tracing
-      // spdlog::info("[PPMAPA] eye tracing pass...");
+      // ray tracing from camera
 #pragma omp parallel for collapse(2) schedule(dynamic, 1)
       for (uint32_t i = 0; i < height; ++i) {
         for (uint32_t j = 0; j < width; ++j) {
@@ -546,7 +544,7 @@ class PPM : public Integrator {
 
           // SSAA
           const float u =
-              (2.0f * (j + sampler_per_thread.getNext1D()) - width) / height;
+              -(2.0f * (j + sampler_per_thread.getNext1D()) - width) / height;
           const float v =
               (2.0f * (i + sampler_per_thread.getNext1D()) - height) / height;
 
@@ -578,7 +576,6 @@ class PPM : public Integrator {
           }
         }
       }
-      // spdlog::info("[SPPM] done");
 
       // update search radius
       globalRadius =
