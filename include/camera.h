@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "core.h"
+#include "ray.h"
 #include "sampler.h"
 
 class Camera {

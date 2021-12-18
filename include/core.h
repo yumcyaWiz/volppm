@@ -252,19 +252,6 @@ inline Vec3f sphericalToCartesian(float theta, float phi) {
                std::sin(phi) * std::sin(theta));
 }
 
-struct Ray {
-  Vec3f origin;
-  Vec3f direction;
-  static constexpr float tmin = RAY_EPS;
-  mutable float tmax = std::numeric_limits<float>::max();
-
-  Ray() {}
-  Ray(const Vec3f& origin, const Vec3f& direction)
-      : origin(origin), direction(direction) {}
-
-  Vec3f operator()(float t) const { return origin + t * direction; }
-};
-
 struct SurfaceInfo {
   Vec3f position;
   Vec3f geometricNormal;

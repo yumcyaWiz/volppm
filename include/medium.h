@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "core.h"
+#include "ray.h"
 #include "sampler.h"
 
 class PhaseFunction {
