@@ -25,9 +25,9 @@ template <typename T>
 struct Vec2 {
   T v[2];
 
-  Vec2() { v[0] = v[1] = 0; }
-  Vec2(T x) { v[0] = v[1] = x; }
-  Vec2(T x, T y) {
+  explicit Vec2() { v[0] = v[1] = 0; }
+  explicit Vec2(T x) { v[0] = v[1] = x; }
+  explicit Vec2(T x, T y) {
     v[0] = x;
     v[1] = y;
   }
@@ -118,9 +118,9 @@ struct Vec3 {
   // implement Point
   static constexpr int dim = 3;
 
-  Vec3() { v[0] = v[1] = v[2] = 0; }
-  Vec3(T x) { v[0] = v[1] = v[2] = x; }
-  Vec3(T x, T y, T z) {
+  explicit Vec3() { v[0] = v[1] = v[2] = 0; }
+  explicit Vec3(T x) { v[0] = v[1] = v[2] = x; }
+  explicit Vec3(T x, T y, T z) {
     v[0] = x;
     v[1] = y;
     v[2] = z;
