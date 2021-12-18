@@ -188,7 +188,7 @@ class PathTracing : public PathIntegrator {
 //  Knaus, Claude, and Matthias Zwicker.
 // "Progressive photon mapping: A probabilistic approach." ACM Transactions on
 // Graphics (TOG) 30.3 (2011): 1-13.
-class PPMAPA : public Integrator {
+class PPM : public Integrator {
  private:
   // number of iterations
   const uint32_t nIterations;
@@ -272,11 +272,11 @@ class PPMAPA : public Integrator {
       for (uint32_t k = 0; k < maxDepth; ++k) {
         if (std::isnan(throughput[0]) || std::isnan(throughput[1]) ||
             std::isnan(throughput[2])) {
-          spdlog::error("[PPMAPA] photon throughput is NaN");
+          spdlog::error("[PPM] photon throughput is NaN");
           break;
         } else if (throughput[0] < 0 || throughput[1] < 0 ||
                    throughput[2] < 0) {
-          spdlog::error("[PPMAPA] photon throughput is minus");
+          spdlog::error("[PPM] photon throughput is minus");
           break;
         }
 
@@ -380,9 +380,9 @@ class PPMAPA : public Integrator {
   }
 
  public:
-  PPMAPA(const std::shared_ptr<Camera>& camera, uint32_t nIterations,
-         uint32_t nPhotons, float alpha, float initialRadius,
-         uint32_t maxDepth = 100)
+  PPM(const std::shared_ptr<Camera>& camera, uint32_t nIterations,
+      uint32_t nPhotons, float alpha, float initialRadius,
+      uint32_t maxDepth = 100)
       : Integrator(camera),
         nIterations(nIterations),
         nPhotons(nPhotons),
@@ -407,10 +407,10 @@ class PPMAPA : public Integrator {
     const uint32_t width = image.getWidth();
     const uint32_t height = image.getHeight();
 
-    spdlog::info("[PPMAPA] rendering...");
+    spdlog::info("[PPM] rendering...");
     for (uint32_t iteration = 0; iteration < nIterations; ++iteration) {
-      spdlog::info("[PPMAPA] iteration: {}", iteration);
-      spdlog::info("[PPMAPA] radius: {}", globalRadius);
+      spdlog::info("[PPM] iteration: {}", iteration);
+      spdlog::info("[PPM] radius: {}", globalRadius);
 
       // clear previous photon map
       photonMap.clear();
@@ -444,14 +444,14 @@ class PPMAPA : public Integrator {
             // invalid radiance check
             if (std::isnan(radiance[0]) || std::isnan(radiance[1]) ||
                 std::isnan(radiance[2])) {
-              spdlog::error("[SPPM] radiance is NaN");
+              spdlog::error("[PPM] radiance is NaN");
               continue;
             } else if (std::isinf(radiance[0]) || std::isinf(radiance[1]) ||
                        std::isinf(radiance[2])) {
-              spdlog::error("[SPPM] radiance is inf");
+              spdlog::error("[PPM] radiance is inf");
               continue;
             } else if (radiance[0] < 0 || radiance[1] < 0 || radiance[2] < 0) {
-              spdlog::error("[SPPM] radiance is minus");
+              spdlog::error("[PPM] radiance is minus");
               continue;
             }
 
@@ -479,7 +479,7 @@ class PPMAPA : public Integrator {
     // take average
     image /= Vec3f(nIterations);
 
-    spdlog::info("[PPMAPA] done");
+    spdlog::info("[PPM] done");
   }
 };
 
