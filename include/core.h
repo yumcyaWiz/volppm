@@ -221,6 +221,10 @@ inline float length(const Vec3f& v) { return std::sqrt(dot(v, v)); }
 inline float length2(const Vec3f& v) { return dot(v, v); }
 inline Vec3f normalize(const Vec3f& v) { return v / length(v); }
 
+inline Vec3f exp(const Vec3f& v) {
+  return Vec3f(std::exp(v[0]), std::exp(v[1]), std::exp(v[2]));
+}
+
 inline void orthonormalBasis(const Vec3f& n, Vec3f& t, Vec3f& b) {
   if (std::abs(n[1]) < 0.9f) {
     t = normalize(cross(n, Vec3f(0, 1, 0)));
