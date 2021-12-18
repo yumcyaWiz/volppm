@@ -101,7 +101,7 @@ class Medium {
                               Sampler& sampler) const = 0;
 
   Vec3f evalPhaseFunction(const Vec3f& wo, const Vec3f& wi) const {
-    return phaseFunction->evaluate(wo, wi);
+    return Vec3f(phaseFunction->evaluate(wo, wi));
   }
 };
 
