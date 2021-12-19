@@ -5,7 +5,7 @@
 int main() {
   const uint32_t width = 512;
   const uint32_t height = 512;
-  const uint32_t n_iterations = 100;
+  const uint32_t n_iterations = 1000;
   const uint32_t n_photons = 200000;
   const float alpha = 3.0f / 4.0f;
   const float initial_radius_surface = 0.01f;

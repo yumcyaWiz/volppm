@@ -1,5 +1,7 @@
 # volppm
 
+![](img/water_cornellbox.png)
+
 Volumetric progressive photon mapping written in C++.
 
 WIP.
@@ -35,6 +37,18 @@ make
 ```
 
 ## Gallery
+
+### Water cornell box
+
+|Parameter|Value|
+|:--|:--|
+|number of iterations|1000|
+|number of photons in each iteration|200000|
+|alpha|3/4|
+|initial search radius for surface|0.01|
+|initial search radius for volume|0.05|
+
+![](img/water_cornellbox.png)
 
 ## References
 
