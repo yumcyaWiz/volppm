@@ -50,6 +50,8 @@ make
 
 ![](img/water_cornellbox.png)
 
+This model is available at `models/CornellBox-Water-Small-Light-Covered-Cube-Floor-No-Backwall.obj`
+
 ## References
 
 * [Physically Based Rendering:From Theory To Implementation, Matt Pharr, Wenzel Jakob, and Greg Humphreys](https://pbr-book.org/)
