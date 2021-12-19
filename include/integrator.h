@@ -579,14 +579,14 @@ class PPM : public Integrator {
 
  public:
   PPM(const std::shared_ptr<Camera>& camera, uint32_t nIterations,
-      uint32_t nPhotons, float alpha, float initialRadius,
-      uint32_t maxDepth = 100)
+      uint32_t nPhotons, float alpha, float initial_radius_surface,
+      float initial_radius_volume, uint32_t maxDepth = 100)
       : Integrator(camera),
         nIterations(nIterations),
         nPhotons(nPhotons),
         alpha(alpha),
-        globalRadius(initialRadius),
-        globalRadiusVolume(initialRadius),
+        globalRadius(initial_radius_surface),
+        globalRadiusVolume(initial_radius_volume),
         maxDepth(maxDepth),
         nEmittedPhotons(0) {}
 
