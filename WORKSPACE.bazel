@@ -1,0 +1,34 @@
+workspace(name = "volppm")
+
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "spdlog",
+    build_file = "//bazel:spdlog.BUILD",
+    sha256 = "e20e6bd8f57e866eaf25a5417f0a38a116e537f1a77ac7b5409ca2b180cec0d5",
+    strip_prefix = "spdlog-1.8.2",
+    urls = ["https://github.com/gabime/spdlog/archive/v1.8.2.tar.gz"],
+)
+
+_RULES_EMBREE_COMMIT = "675f3d0d2726d59dd4e55435e466270b14a0be06"
+
+http_archive(
+    name = "de_vertexwahn_rules_embree",
+    sha256 = "363308b42f8f64921126e480841fa510fc686efc7957d366f2e10828db63b68b",
+    strip_prefix = "rules_embree-%s" % _RULES_EMBREE_COMMIT,
+    urls = [
+        "https://github.com/Vertexwahn/rules_embree/archive/%s.tar.gz" % _RULES_EMBREE_COMMIT,
+    ],
+)
+
+load("@de_vertexwahn_rules_embree//:embree/embree.bzl", "embree_deps")
+
+embree_deps()
+
+http_archive(
+    name = "tinyobjloader",
+    build_file = "//bazel:tinyobjloader.BUILD",
+    sha256 = "44ac97d515953882563c9b02214c42bccfb54298e4e92e5aab178af16022adea",
+    strip_prefix = "tinyobjloader-28a27f7006a7aa22ac8ee2997e2bf639c56b4ebd",
+    urls = ["https://github.com/tinyobjloader/tinyobjloader/archive/28a27f7006a7aa22ac8ee2997e2bf639c56b4ebd.tar.gz"],
+)

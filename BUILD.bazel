@@ -1,0 +1,39 @@
+cc_library(
+    name = "volppm",
+    hdrs = [
+        "include/camera.h",
+        "include/core.h",
+        "include/image.h",
+        "include/integrator.h",
+        "include/light.h",
+        "include/material.h",
+        "include/medium.h",
+        "include/photon_map.h",
+        "include/primitive.h",
+        "include/ray.h",
+        "include/sampler.h",
+        "include/scene.h",
+        "include/triangle.h",
+    ],
+    includes = ["include"],
+)
+
+cc_binary(
+    name = "main",
+    srcs = [
+        "examples/main.cpp",
+    ],
+    defines = [
+        "TINYOBJLOADER_IMPLEMENTATION",
+    ],
+    data = [
+        "CornellBox-Water-Small-Light-Covered-Cube-Floor-No-Backwall.mtl",
+        "models/CornellBox-Water-Small-Light-Covered-Cube-Floor-No-Backwall.obj",
+    ],
+    deps = [
+        ":volppm",
+        "@embree",
+        "@spdlog",
+        "@tinyobjloader",
+    ],
+)
