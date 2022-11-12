@@ -27,7 +27,7 @@ int main() {
   // build scene
   Scene scene;
   scene.loadObj(
-      "CornellBox-Water-Small-Light-Covered-Cube-Floor-No-Backwall.obj");
+      "models/CornellBox-Water-Small-Light-Covered-Cube-Floor-No-Backwall.obj");
   scene.build();
 
   // render
